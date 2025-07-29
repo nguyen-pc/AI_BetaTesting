@@ -60,7 +60,9 @@ import fitz  # PyMuPDF
 import os
 import cohere
 from dotenv import load_dotenv
-from data import candidates, jobs  # Assumed to be available
+# from data import candidates, jobs  # Assumed to be available
+from typing import List, Dict
+from fastapi.middleware.cors import CORSMiddleware
 
 # Load biến từ file .env
 load_dotenv()
@@ -75,6 +77,20 @@ co = cohere.Client(api_key)
 
 app = FastAPI()
 
+origins = [
+    "http://localhost:5173",
+    # Bạn có thể thêm các origin khác nếu cần, hoặc dùng "*" cho phép tất cả
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,        # Cho phép các origin trong danh sách
+    allow_credentials=True,
+    allow_methods=["*"],          # Cho phép tất cả các phương thức
+    allow_headers=["*"],          # Cho phép tất cả các headers
+)
+
+
 # ----- Models -----
 class Interaction(BaseModel):
     user_id: int
@@ -82,7 +98,8 @@ class Interaction(BaseModel):
     interaction_type: Literal['view', 'apply']
 
 class CandidateRequest(BaseModel):
-    candidate_id: int
+    candidate: Dict  # hoặc tạo model Candidate nếu muốn
+    jobs: List[Dict]
 
 # ----- Utility Functions -----
 def get_text(skills):
@@ -115,26 +132,37 @@ def get_collaborative_scores(user_id, interactions_path="interactions.json"):
         return {}
 
     df = pd.DataFrame(interactions)
-    df["interaction"] = 1  # All interactions are counted equally for now
 
-    matrix = df.pivot_table(index="user_id", columns="job_id", values="interaction", fill_value=0)
+    # Giữ giá trị cao nhất nếu user_id - job_id trùng (apply > view)
+    df["interaction_value"] = df["interaction_type"].apply(lambda x: 2 if x == "apply" else 1)
+    df = df.sort_values(by="interaction_value", ascending=False)
+    df = df.drop_duplicates(subset=["user_id", "job_id"], keep="first")
+
+    # Pivot thành ma trận tiện ích
+    matrix = df.pivot_table(index="user_id", columns="job_id", values="interaction_value", fill_value=0)
+
     if user_id not in matrix.index:
         return {}
 
+    # Tính cosine similarity
     sim = cosine_similarity(matrix)
     sim_df = pd.DataFrame(sim, index=matrix.index, columns=matrix.index)
 
+    # Lấy 3 người dùng tương tự nhất (có thể chỉnh K tuỳ ý)
     similar_users = sim_df[user_id].drop(user_id).sort_values(ascending=False).head(3)
+
     scores = {}
     for sim_user, sim_score in similar_users.items():
         jobs_interacted = matrix.loc[sim_user]
-        for job_id, interacted in jobs_interacted.items():
-            if interacted == 1 and matrix.loc[user_id, job_id] == 0:
-                scores[job_id] = scores.get(job_id, 0) + sim_score
+        for job_id, interaction_value in jobs_interacted.items():
+            # Nếu người dùng hiện tại chưa tương tác với job_id
+            if matrix.loc[user_id, job_id] == 0 and interaction_value > 0:
+                scores[job_id] = scores.get(job_id, 0) + sim_score * interaction_value
 
     return scores  # job_id -> score
+    
 
-def recommend_jobs(candidate, jobs, top_n=3):
+def recommend_jobs(candidate, jobs, top_n=4):
     content_scores = content_based_scores(candidate, jobs)
     cf_scores = get_collaborative_scores(candidate["id"])
 
@@ -199,14 +227,19 @@ Trả lời bằng tiếng Việt.
 # ----- API Endpoints -----
 @app.post("/recommendations")
 def get_recommendations(req: CandidateRequest):
-    candidate = next((c for c in candidates if c["id"] == req.candidate_id), None)
-    if not candidate:
-        return {"error": "Candidate not found"}
+    print(req)
+
+    candidate = req.candidate
+    jobs = req.jobs
+
     recommendations = recommend_jobs(candidate, jobs)
+
+    print("Recommendations:", recommendations)
     return {"recommendations": recommendations}
 
 @app.post("/interactions")
 def log_interaction(data: Interaction):
+    print("Logging interaction:", data)
     interaction = data.dict()
     interaction["timestamp"] = datetime.now().isoformat()
 

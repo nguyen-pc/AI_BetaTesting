@@ -14,7 +14,7 @@
   {
     "user_id": 3,
     "job_id": 17,
-    "interaction_type": "view",
+    "interaction_type": "apply",
     "timestamp": "2025-05-27T11:51:23.912922"
   },
   {
@@ -94,5 +94,53 @@
     "job_id": 1,
     "interaction_type": "view",
     "timestamp": "2025-05-27T12:08:28.951972"
+  },
+  {
+    "user_id": 1,
+    "job_id": 3,
+    "interaction_type": "view",
+    "timestamp": "2025-07-15T21:28:24.799378"
+  },
+  {
+    "user_id": 19,
+    "job_id": 10,
+    "interaction_type": "view",
+    "timestamp": "2025-07-20T19:10:55.695242"
+  },
+  {
+    "user_id": 19,
+    "job_id": 1,
+    "interaction_type": "view",
+    "timestamp": "2025-07-20T19:16:55.268686"
+  },
+  {
+    "user_id": 19,
+    "job_id": 10,
+    "interaction_type": "view",
+    "timestamp": "2025-07-20T19:19:30.762067"
+  },
+  {
+    "user_id": 19,
+    "job_id": 1,
+    "interaction_type": "view",
+    "timestamp": "2025-07-22T16:53:52.764824"
+  },
+  {
+    "user_id": 1,
+    "job_id": 1,
+    "interaction_type": "view",
+    "timestamp": "2025-07-22T17:08:03.130706"
+  },
+  {
+    "user_id": 1,
+    "job_id": 12,
+    "interaction_type": "view",
+    "timestamp": "2025-07-22T17:09:22.327507"
+  },
+  {
+    "user_id": 1,
+    "job_id": 12,
+    "interaction_type": "view",
+    "timestamp": "2025-07-29T12:55:54.053147"
   }
 ]
