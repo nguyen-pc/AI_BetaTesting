@@ -79,7 +79,7 @@ def analyze_text(data: TextInput):
 load_dotenv()
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
-    raise RuntimeError("⚠️ GEMINI_API_KEY missing in .env")
+    raise RuntimeError("GEMINI_API_KEY missing in .env")
 
 genai.configure(api_key=API_KEY)
 
@@ -147,7 +147,7 @@ async def chat(req: ChatRequest):
 
         model = genai.GenerativeModel("gemini-2.5-flash")
 
-        # ✅ Sửa: tạo context đúng chuẩn Gemini
+        # Sửa: tạo context đúng chuẩn Gemini
         context = [
             {"role": "user", "parts": [{"text": PROMPT_SYSTEM}]}
         ]
@@ -185,7 +185,7 @@ async def chat(req: ChatRequest):
 
         model = genai.GenerativeModel("gemini-2.5-flash")
 
-        # 🧠 Kết hợp lịch sử hội thoại + hệ thống + câu hỏi mới
+        # Kết hợp lịch sử hội thoại + hệ thống + câu hỏi mới
         context = [{"role": "system", "content": PROMPT_SYSTEM}]
         if req.history:
             for h in req.history:
