@@ -18,13 +18,14 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 import traceback
 import os
+import json
 
 nltk.download("stopwords")
 stop_words = set(stopwords.words("english"))
 
 app = FastAPI(title="Survey AI Analysis Service")
 
-# ✅ Bật CORS
+#  Bật CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # hoặc giới hạn domain frontend của bạn
@@ -74,14 +75,16 @@ def analyze_text(data: TextInput):
     }
 
 
+# AIzaSyCN3nue1noVLjt__X9KW9om8IseqzC64Gk
 
 # Load env & configure Gemini
 load_dotenv()
 API_KEY = os.getenv("GEMINI_API_KEY")
+print("GEMINI_API_KEY:", API_KEY)
 if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY missing in .env")
 
-genai.configure(api_key=API_KEY)
+genai.configure(api_key="AIzaSyAzs4oGmPM7sTGguD3ZtPLphBaDouvE5_U")
 
 class ChatMessage(BaseModel):
     role: str
@@ -92,6 +95,7 @@ class ChatRequest(BaseModel):
     mode: str | None = "general"
     message: str
     history: list[ChatMessage] | None = [] 
+    contextData: dict | None = None
 
 PROMPT_SYSTEM = (
     "You are BetaBot, an AI assistant for the BetaTesting platform. "
@@ -134,7 +138,6 @@ MODE_TEMPLATES = {
     "general": "{content}",
 }
 
-
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
@@ -145,6 +148,14 @@ async def chat(req: ChatRequest):
         template = MODE_TEMPLATES.get(req.mode or "general", MODE_TEMPLATES["general"])
         user_prompt = template.format(content=content)
 
+        if hasattr(req, "contextData") and req.contextData:
+            user_prompt += (
+                "\n\nHere is real project data in JSON:\n"
+                f"{json.dumps(req.contextData, ensure_ascii=False)}\n"
+                "Use ONLY this data to answer the developer's question."
+            )
+
+        print("User Prompt:", user_prompt)
         model = genai.GenerativeModel("gemini-2.5-flash")
 
         # Sửa: tạo context đúng chuẩn Gemini
@@ -152,10 +163,10 @@ async def chat(req: ChatRequest):
             {"role": "user", "parts": [{"text": PROMPT_SYSTEM}]}
         ]
 
-        if req.history:
-            for h in req.history:
-                role = "user" if h.role == "user" else "model"
-                context.append({"role": role, "parts": [{"text": h.content}]})
+        # if req.history:
+        #     for h in req.history:
+        #         role = "user" if h.role == "user" else "model"
+        #         context.append({"role": role, "parts": [{"text": h.content}]})
 
         # Thêm message hiện tại
         context.append({"role": "user", "parts": [{"text": user_prompt}]})
@@ -173,42 +184,121 @@ async def chat(req: ChatRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"AI Service Error: {e}")
-    try:
-        # Làm sạch message
-        content = BeautifulSoup(req.message, "html.parser").get_text().strip()
-        if not content:
-            raise HTTPException(status_code=400, detail="Empty message")
-
-        # Prompt hệ thống và user hiện tại
-        template = MODE_TEMPLATES.get(req.mode or "general", MODE_TEMPLATES["general"])
-        user_prompt = template.format(content=content)
-
-        model = genai.GenerativeModel("gemini-2.5-flash")
-
-        # Kết hợp lịch sử hội thoại + hệ thống + câu hỏi mới
-        context = [{"role": "system", "content": PROMPT_SYSTEM}]
-        if req.history:
-            for h in req.history:
-                context.append({"role": h.role, "content": h.content})
-
-        context.append({"role": "user", "content": user_prompt})
-
-        response = model.generate_content(context)
-        text = (response.text or "").strip()
-
-        return {
-            "sessionId": req.sessionId,
-            "mode": req.mode,
-            "response": text,
-        }
-
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"AI Service Error: {e}")
+    
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "model": "gemini-2.5-flash"}
+
+
+class BugAnalysisCampaign(BaseModel):
+    id: int
+    title: Optional[str] = ""
+    description: Optional[str] = ""
+    instructions: Optional[str] = ""
+
+class BugAnalysisItem(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = ""
+    stepsToReproduce: Optional[str] = ""
+    expectedResult: Optional[str] = ""
+    actualResult: Optional[str] = ""
+    severity: Optional[str] = ""
+    priority: Optional[str] = ""
+    status: Optional[str] = ""
+    testerId: Optional[int] = None
+    testerUserName: Optional[str] = None
+    campaignId: Optional[int] = None
+
+class BugAnalysisRequest(BaseModel):
+    campaign: BugAnalysisCampaign
+    bugs: List[BugAnalysisItem]
+
+@app.post("/bug/analyze")
+def analyze_bug(req: BugAnalysisRequest):
+    try:
+        if not req.bugs or len(req.bugs) == 0:
+            raise HTTPException(status_code=400, detail="No bug data provided")
+
+        def clean(text: str):
+            return BeautifulSoup(text or "", "html.parser").get_text().strip()
+
+        bug_list = []
+        for b in req.bugs:
+            bug_list.append({
+                "id": b.id,
+                "title": clean(b.title),
+                "description": clean(b.description),
+                "steps": clean(b.stepsToReproduce),
+                "expected": clean(b.expectedResult),
+                "actual": clean(b.actualResult),
+                "severity": b.severity or "UNKNOWN",
+                "priority": b.priority or "NONE",
+                "status": b.status or "NONE",
+            })
+
+        severity_count = {}
+        for b in bug_list:
+            sev = b["severity"]
+            severity_count[sev] = severity_count.get(sev, 0) + 1
+
+        texts = [f"{b['title']} {b['description']} {b['steps']}" for b in bug_list]
+        vectorizer = CountVectorizer(stop_words="english")
+        vectors = vectorizer.fit_transform(texts)
+        sim_matrix = cosine_similarity(vectors)
+
+        duplicates = []
+        for i in range(len(bug_list)):
+            for j in range(i + 1, len(bug_list)):
+                if sim_matrix[i][j] > 0.65:
+                    duplicates.append({
+                        "bugA": bug_list[i]["id"],
+                        "bugB": bug_list[j]["id"],
+                        "similarity": round(sim_matrix[i][j], 3)
+                    })
+
+        # FIXED PROMPT (escaped braces)
+        prompt = f"""
+        Bạn là chuyên gia QA Lead. Hãy phân tích toàn bộ danh sách bug trong chiến dịch này.
+
+        Chiến dịch:
+        ID: {req.campaign.id}
+        Tiêu đề: {req.campaign.title}
+        Mô tả: {clean(req.campaign.description)}
+
+        Hãy trả về **STRICT JSON (KHÔNG MARKDOWN)** với các key sau (bằng tiếng Việt):
+
+        {{
+        "tong_quan": "Tóm tắt tình trạng lỗi và mô hình chung",
+        "muc_do_rui_ro": "Low/Medium/High/Critical",
+        "muc_do_severity_hang_dau": ["MAJOR", "MINOR"],
+        "nguyen_nhan_kha_nang": ["...", "..."],
+        "goi_y_uu_tien_sua_loi": [{{ "bugId": 1, "suggestedPriority": "HIGH" }}],
+        "de_xuat": ["...", "..."],
+        "danh_gia_chat_luong_bao_cao": "..."
+        }}
+
+        Dữ liệu bug:
+        {bug_list}
+        """
+
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        ai_result = (model.generate_content(prompt).text or "").strip()
+
+        return {
+            "campaignId": req.campaign.id,
+            "campaignTitle": req.campaign.title,
+            "total_bugs": len(bug_list),
+            "severity_overview": severity_count,
+            "duplicates": duplicates,
+            "ai_analysis": ai_result,
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Bug Analysis Error: {str(e)}")
+
 
 # Gợi ý cho người dùng
 
